@@ -28,15 +28,14 @@ define contact {
 
 define host {
   name                            default-host
-  notifications_enabled           1
-  event_handler_enabled           1
+  notifications_enabled           <%= nagios_boolean(nagios_attr(:default_host)[:notifications]) %>
+  event_handler_enabled           <%= nagios_boolean(nagios_attr(:default_host)[:event_handler]) %>
   flap_detection_enabled          <%= nagios_boolean(nagios_attr(:default_host)[:flap_detection]) %>
-  failure_prediction_enabled      1
-#  process_perf_data               1
-  process_perf_data               0
-  retain_status_information       1
-  retain_nonstatus_information    1
-  notification_period             24x7
+  failure_prediction_enabled      <%= nagios_boolean(nagios_attr(:default_host)[:failure_prediction]) %>
+  process_perf_data               <%= nagios_boolean(nagios_attr(:default_host)[:process_perf_data]) %>
+  retain_status_information       <%= nagios_boolean(nagios_attr(:default_host)[:retain_status_information]) %>
+  retain_nonstatus_information    <%= nagios_boolean(nagios_attr(:default_host)[:retain_nonstatus_information]) %>
+  notification_period             <%= nagios_attr(:default_host)[:notification_period] %>
   register                        0
 }
 
@@ -115,3 +114,45 @@ define service {
 }
 <% end -%>
 
+# Host templates defined by nagios_hosttemplates data bags
+<% @host_templates.each do |template| -%>
+define host {
+  name <%= template['id'] %>
+  use <% if template['use'].nil? -%>default-host<% else -%><%= template['use'] %><% end -%>
+  register 0
+  <% interval_confs = %w{
+       check_interval
+       retry_interval
+       notification_interval
+     }
+     interval_confs.each do |conf| %>
+    <% unless template[conf].nil? %>
+  <%= conf %> <%= nagios_interval(template[conf]) %>
+    <% end %>
+  <% end %>
+  <% confs = %w{
+       action_url
+       check_freshness
+       check_period
+       contact_groups
+       check_command
+       event_handler_enabled
+       flap_detection_enabled
+       max_check_attempts
+       notes_url
+       notification_options
+       notification_period
+       notifications_enabled
+       obsess_over_host
+       passive_checks_enabled
+       process_perf_data
+       retain_nonstatus_information
+       retain_status_information
+     }
+     confs.each do |conf| %>
+    <% unless template[conf].nil? %>
+  <%= conf %> <%= template[conf] %>
+    <% end %>
+  <% end %>
+}
+<% end -%>

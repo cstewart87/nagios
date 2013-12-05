@@ -87,6 +87,7 @@ default['nagios']['users_databag_group']         = 'sysadmin'
 default['nagios']['services_databag']            = 'nagios_services'
 default['nagios']['servicegroups_databag']       = 'nagios_servicegroups'
 default['nagios']['templates_databag']           = 'nagios_templates'
+default['nagios']['hosttemplates_databag']       = 'nagios_hosttemplates'
 default['nagios']['eventhandlers_databag']       = 'nagios_eventhandlers'
 default['nagios']['unmanagedhosts_databag']      = 'nagios_unmanagedhosts'
 default['nagios']['serviceescalations_databag']  = 'nagios_serviceescalations'
@@ -115,8 +116,15 @@ default['nagios']['ldap_authoritative'] = nil
 default['nagios']['templates']       = Mash.new
 default['nagios']['interval_length'] = 1
 
-default['nagios']['default_host']['flap_detection']        = true
-default['nagios']['default_host']['check_period']          = '24x7'
+default['nagios']['default_host']['flap_detection']               = true
+default['nagios']['default_host']['check_period']                 = '24x7'
+default['nagios']['default_host']['process_perf_data']            = false
+default['nagios']['default_host']['failure_prediction']           = true
+default['nagios']['default_host']['notifications']                = true
+default['nagios']['default_host']['event_handler']                = true
+default['nagios']['default_host']['retain_status_information']    = true
+default['nagios']['default_host']['retain_nonstatus_information'] = true
+default['nagios']['default_host']['notification_period']          = '24x7'
 # Provide all interval values in seconds
 default['nagios']['default_host']['check_interval']        = 15
 default['nagios']['default_host']['retry_interval']        = 15
