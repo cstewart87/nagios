@@ -17,9 +17,9 @@ This cookbook relies heavily on multiple data bags. See __Data Bag__ below.
 The system running the 'server' recipe should have a role named 'monitoring' so that NRPE clients can authorize monitoring from that system. This role name is configurable via an attribute. See __Attributes__ below.
 
 ### Platform
-* Debian 6
-* Ubuntu 10.04, 12.04
-* Red Hat Enterprise Linux (CentOS/Amazon/Scientific/Oracle) 5.9, 6.4
+* Debian 6.X, 7.X
+* Ubuntu 10.04, 12.04, 13.04
+* Red Hat Enterprise Linux (CentOS/Amazon/Scientific/Oracle) 5.X, 6.X
 
 **Notes**: This cookbook has been tested on the listed platforms. It may work on other platforms with or without modification.
 
@@ -29,7 +29,7 @@ The system running the 'server' recipe should have a role named 'monitoring' so 
 * nginx
 * nginx_simplecgi
 * php
-* yum
+* yum-epel (note: this requires yum cookbook v3.0, which breaks compatibility with many other cookbooks)
 
 
 Attributes
@@ -75,6 +75,7 @@ The following attributes are used for the NRPE client
 ##### authorization and server discovery
 * `node['nagios']['server_role']` - the role that the Nagios server will have in its run list that the clients can search for.
 * `node['nagios']['allowed_hosts']` - additional hosts that are allowed to connect to this client. Must be an array of strings (i.e. `%w(test.host other.host)`). These hosts are added in addition to 127.0.0.1 and IPs that are found via search.
+* `node['nagios']['using_solo_search']` - discover server information in node data_bags even with chef solo through the use of solo-search (https://github.com/edelight/chef-solo-search)
 
 ##### misc
 * `node['nagios']['nrpe']['dont_blame_nrpe']` - allows the server to send additional values to NRPE via arguments.  this needs to be enabled for most checks to function
@@ -96,7 +97,7 @@ The following attributes are used for the Nagios server
 * `node['nagios']['timezone']` - Nagios timezone, defaults to UTC
 * `node['nagios']['enable_ssl]` - boolean for whether Nagios web server should be https, default false
 * `node['nagios']['ssl_cert_file']` = Location of SSL Certificate File. default "/etc/nagios3/certificates/nagios-server.pem"
-* `node['nagios']['ssl_cert_chain_file']` = Optional location of SSL Intermediate Certificate File. No default. 
+* `node['nagios']['ssl_cert_chain_file']` = Optional location of SSL Intermediate Certificate File. No default.
 * `node['nagios']['ssl_cert_key']`  = Location of SSL Certificate Key. default "/etc/nagios3/certificates/nagios-server.pem"
 * `node['nagios']['http_port']` - port that the Apache/Nginx virtual site should listen on, determined whether ssl is enabled (443 if so, otherwise 80). Note:  You will also need to configure the listening port for either NGINX or Apache within those cookbooks.
 * `node['nagios']['server_name']` - common name to use in a server cert, default "nagios"
@@ -130,6 +131,7 @@ The following attributes are used for the Nagios server
 * `node['nagios']['eventhandlers_databag']` - the databag containing eventhandlers to search for. defaults to nagios_eventhandlers
 * `node['nagios']['unmanaged_hosts_databag']` - the databag containing unmanagedhosts to search for. defaults to nagios_unmanagedhosts
 * `node['nagios']['serviceescalations_databag']` - the databag containing serviceescalations to search for. defaults to nagios_serviceescalations
+* `node['nagios']['hostescalations_databag']` - the databag containing hostescalations to search for. defaults to nagios_hostescalations
 * `node['nagios']['contacts_databag']` - the databag containing contacts to search for. defaults to nagios_contacts
 * `node['nagios']['contactgroups_databag']` - the databag containing contactgroups to search for. defaults to nagios_contactgroups
 * `node['nagios']['servicedependencies_databag']` - the databag containing servicedependencies to search for. defaults to nagios_servicedependencies
@@ -138,6 +140,7 @@ The following attributes are used for the Nagios server
 * `node['nagios']['large_installation_tweaks']` - Attribute to enable [large installation tweaks](http://nagios.sourceforge.net/docs/3_0/largeinstalltweaks.html). Defaults to 0.
 * `node['nagios']['templates']`
 * `node['nagios']['interval_length']` - minimum interval.
+* `node['nagios']['brokers']` - Hash of broker modules to include in the config. Hash key is the path to the broker module, the value is any parameters to pass to it.
 
 These set directives in the default host template. Unless explicitly
 overridden, they will be inheirited by the host definitions for each
@@ -172,7 +175,7 @@ These are additional nagios.cfg options.
  * `node['nagios']['conf']['debug_level']`               - Defaults to 0
  * `node['nagios']['conf']['debug_verbosity']`           - Defaults to 1
  * `node['nagios']['conf']['debug_file']`                - Defaults to `#{node['nagios']['state_dir']}/#{node['nagios']['server']['name']}.debug`
- 
+
  These are nagios cgi.config options.
 
  * `node['nagios']['cgi']['show_context_help']`                         - Defaults to 1
@@ -296,7 +299,7 @@ Example `nagios_contactgroup` data bag item
 {
   "id": "non_admins",
   "alias": "Non-Administrator Contacts",
-  "members": "devs helpdesk managers"
+  "members": "devs,helpdesk,managers"
 }
 ```
 
@@ -322,6 +325,17 @@ You may also use an already defined command definition by omitting the command\_
   "id": "pingme",
   "hostgroup_name": "all",
   "use_existing_command": "check-host-alive"
+}
+```
+
+You may also specify that a check only be run if the nagios server is in a specific environment. This is useful if you have nagios servers in several environments but you would like a service check to only apply in one particular environment:
+
+```javascript
+{
+  "id": "ssh",
+  "hostgroup_name": "linux",
+  "activate_check_in_environment": "staging",
+  "command_line": "$USER1$/check_ssh $HOSTADDRESS$"
 }
 ```
 
@@ -352,7 +366,7 @@ Create a nagios\_servicedependencies data bag that will contain definitions for 
 
 ```javascript
 {
-  "id": "Service X depends on Service Y",
+  "id": "Service_X_depends_on_Service_Y",
   "dependent_host_name": "ServerX",
   "dependent_service_description": "Service X",
   "host_name": "ServerY",
@@ -363,31 +377,28 @@ Create a nagios\_servicedependencies data bag that will contain definitions for 
 
 Additional directives can be defined as described in the [Nagios documentation](http://nagios.sourceforge.net/docs/3_0/objectdefinitions.html#servicedependency).
 
-### Host Templates
-Host templates are optional, but allow you to specify combinations of attributes to apply to a host. Create a nagios_hosttemplates\ data bag that will contain definitions for host templates to be used. Each host template need only specify id and whichever parameters you want to override.
+### Time Periods
+Create a data bag for time periods, nagios_timeperiods by default, for timeperiod defintions.  Time periods are named based on the id of the data bag, and the id and alias are required.
 
-Here's an example of a template that reduces the check frequency to once per day and changes the retry interval to 1 hour.
+Here is an example timeperiod definition:
 
 ```javascript
 {
-  "id": "windows-host",
-  "check_command": "check-host-alive-windows"
+  "id": "time_period_name",
+  "alias": "This time period goes from now to then",
+  "times": [
+    "sunday 09:00-17:00",
+    "monday 09:00-17:00",
+    "tuesday 09:00-17:00",
+    "wednesday 09:00-17:00",
+    "thursday 09:00-17:00",
+    "friday 09:00-17:00",
+    "saturday 09:00-17:00"
+  ]
 }
 ```
 
-You then use the host template by setting the `node['nagios']['host_template']` attribute for a node. You could apply this with a role as follows:
-
-```ruby
-role 'windows'
-
-default_attributes(
-  nagios: {
-    host_template: 'windows-host'
-  }
-)
-```
-
-Additional directives can be defined as described in the Nagios documentation for [Host Definitions](http://nagios.sourceforge.net/docs/3_0/objectdefinitions.html#host).
+Additional information on defining time periods can be found in the [Nagios Documentation](http://nagios.sourceforge.net/docs/3_0/objectdefinitions.html#timeperiod).
 
 ### Templates
 Templates are optional, but allow you to specify combinations of attributes to apply to a service. Create a nagios_templates\ data bag that will contain definitions for templates to be used. Each template need only specify id and whichever parameters you want to override.
@@ -398,7 +409,7 @@ Here's an example of a template that reduces the check frequency to once per day
 {
   "id": "dailychecks",
   "check_interval": "86400",
-  "retry": "3600"
+  "retry_interval": "3600"
 }
 ```
 
@@ -436,6 +447,18 @@ Here's an example host definition:
   "address": "webserver1.mydmz.dmz",
   "hostgroups": ["web_servers","production_servers"],
   "id": "webserver1",
+  "notifications": 1
+}
+```
+
+Similar to services, you may also filter unmanaged hosts by environment. This is useful if you have nagios servers in several environments but you would like to monitor an unmanaged host that only exists in a particular environment:
+
+```javascript
+{
+  "address": "webserver1.mydmz.dmz",
+  "hostgroups": ["web_servers","production_servers"],
+  "id": "webserver1",
+  "environment": "production",
   "notifications": 1
 }
 ```
@@ -512,11 +535,13 @@ You can define pagerduty contacts and keys by creating nagios\_pagerduty data ba
 the relevant key. Setting admin\_contactgroup to "true" will add this pagerduty contact to the admin contact group
 created by this cookbook.
 
-       {
-         "id": "pagerduty_critical",
-         "admin_contactgroup": "true",
-         "key": "a33e5ef0ac96772fbd771ddcccd3ccd0"
-       }
+```javascript
+{
+  "id": "pagerduty_critical",
+  "admin_contactgroup": "true",
+  "key": "a33e5ef0ac96772fbd771ddcccd3ccd0"
+}
+```
 
 You can add these contacts to any contactgroups you create.
 

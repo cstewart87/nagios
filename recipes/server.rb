@@ -54,12 +54,19 @@ end
 # find nagios web interface users from the defined data bag
 user_databag = node['nagios']['users_databag'].to_sym
 group = node['nagios']['users_databag_group']
+
+sysadmins = []
+
 begin
-  sysadmins = search(user_databag, "groups:#{group} NOT action:remove")
+  search(user_databag, "groups:#{group} NOT action:remove") { |d| sysadmins << d unless d['nagios'].nil? || d['nagios']['email'].nil? }
 rescue Net::HTTPServerException
-  Chef::Log.fatal("Could not find appropriate items in the \"#{node['nagios']['users_databag']}\" databag.  Check to make sure the databag exists and if you have set the \"users_databag_group\" that users in that group exist")
-  raise 'Could not find appropriate items in the "users" databag.  Check to make sure there is a users databag and if you have set the "users_databag_group" that users in that group exist'
+  Chef::Log.fatal("\"#{node['nagios']['users_databag']}\" databag could not be found.")
+  raise "\"#{node['nagios']['users_databag']}\" databag could not be found."
 end
+
+Chef::Log.info("Could not find users in the \"#{node['nagios']['users_databag']}\" databag with the \"#{group}\" group.  If you are
+expecting contacts other than pagerduty contacts, make sure the databag exists and, if you have set the \"users_databag_group\", tha
+t users in that group exist.") if sysadmins.empty?
 
 case node['nagios']['server_auth_method']
 when 'openid'
@@ -106,9 +113,9 @@ nodes = []
 hostgroups = []
 
 if node['nagios']['multi_environment_monitoring']
-  nodes = search(:node, 'hostname:*')
+  nodes = search(:node, 'name:*')
 else
-  nodes = search(:node, "hostname:* AND chef_environment:#{node.chef_environment}")
+  nodes = search(:node, "name:* AND chef_environment:#{node.chef_environment}")
 end
 
 if nodes.empty?
@@ -123,7 +130,7 @@ nodes.sort! { |a, b| a.name <=> b.name }
 service_hosts = {}
 search(:role, '*:*') do |r|
   hostgroups << r.name
-  nodes.select { |n| n['roles'].include?(r.name) }.each do |n|
+  nodes.select { |n| n['roles'].include?(r.name) if n['roles'] }.each do |n|
     service_hosts[r.name] = n[node['nagios']['host_name_attribute']]
   end
 end
@@ -151,9 +158,11 @@ host_templates      = nagios_bags.get(node['nagios']['hosttemplates_databag'])
 eventhandlers       = nagios_bags.get(node['nagios']['eventhandlers_databag'])
 unmanaged_hosts     = nagios_bags.get(node['nagios']['unmanagedhosts_databag'])
 serviceescalations  = nagios_bags.get(node['nagios']['serviceescalations_databag'])
+hostescalations     = nagios_bags.get(node['nagios']['hostescalations_databag'])
 contacts            = nagios_bags.get(node['nagios']['contacts_databag'])
 contactgroups       = nagios_bags.get(node['nagios']['contactgroups_databag'])
 servicedependencies = nagios_bags.get(node['nagios']['servicedependencies_databag'])
+timeperiods         = nagios_bags.get(node['nagios']['timeperiods_databag'])
 
 # Add unmanaged host hostgroups to the hostgroups array if they don't already exist
 unmanaged_hosts.each do |host|
@@ -251,7 +260,9 @@ nagios_conf 'cgi' do
   variables(:nagios_service_name => nagios_service_name)
 end
 
-nagios_conf 'timeperiods'
+nagios_conf 'timeperiods' do
+  variables(:timeperiods => timeperiods)
+end
 
 nagios_conf 'templates' do
   variables(:templates => templates,
@@ -279,7 +290,8 @@ nagios_conf 'contacts' do
             :members => members,
             :contacts => contacts,
             :contactgroups => contactgroups,
-            :serviceescalations => serviceescalations)
+            :serviceescalations => serviceescalations,
+            :hostescalations => hostescalations)
 end
 
 nagios_conf 'hostgroups' do
